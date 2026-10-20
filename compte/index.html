@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Gestion Sécurité — Compte</title>
+  <style>
+    :root { --papier: #f6f4ef; --encre: #17150f; --encre-2: #4a463d; --trait: #cfc9bb; --accent: #b8321a; --ok: #2f6b3a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--papier); color: var(--encre);
+      font: 15px/1.5 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+    main { width: 100%; max-width: 400px; }
+    .marque { font-family: 'Palatino Linotype', Palatino, Georgia, serif; font-size: 20px; font-weight: 600; margin-bottom: 28px; }
+    .marque span { color: var(--accent); }
+    h1 { font-family: 'Palatino Linotype', Palatino, Georgia, serif; font-size: 28px; margin: 0 0 8px; font-weight: 600; }
+    p { color: var(--encre-2); margin: 0 0 18px; }
+    label { display: block; font-size: 13px; color: var(--encre-2); margin: 14px 0 5px; }
+    input { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--trait); border-radius: 6px; background: #fff; }
+    input:focus { outline: none; border-color: var(--encre); box-shadow: 0 0 0 3px rgba(23, 21, 15, 0.08); }
+    button { width: 100%; margin-top: 20px; font: inherit; font-weight: 600; padding: 10px; border: 0; border-radius: 6px; background: var(--encre); color: var(--papier); cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .erreur { background: #f6dfdc; color: #a3221a; padding: 9px 12px; border-radius: 6px; font-size: 14px; margin-top: 14px; }
+    .ok { color: var(--ok); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="marque">Gestion <span>Sécurité</span></div>
+
+    <section id="attente"><h1>Un instant…</h1><p>Vérification du lien.</p></section>
+
+    <section id="nouveau" hidden>
+      <h1>Nouveau mot de passe</h1>
+      <p id="pour"></p>
+      <form id="formulaire">
+        <label for="mdp">Nouveau mot de passe (8 caractères minimum)</label>
+        <input id="mdp" type="password" minlength="8" required autocomplete="new-password" />
+        <label for="mdp2">Confirmer le mot de passe</label>
+        <input id="mdp2" type="password" minlength="8" required autocomplete="new-password" />
+        <div id="erreur-form" class="erreur" hidden></div>
+        <button id="valider" type="submit">Enregistrer le mot de passe</button>
+      </form>
+    </section>
+
+    <section id="change" hidden>
+      <h1 class="ok">Mot de passe modifié</h1>
+      <p>Retournez dans le logiciel Gestion Sécurité et connectez-vous avec votre nouveau mot de passe. Vous pouvez fermer cette page.</p>
+    </section>
+
+    <section id="confirme" hidden>
+      <h1 class="ok">Adresse confirmée</h1>
+      <p>Votre adresse e-mail est confirmée. Retournez dans le logiciel Gestion Sécurité pour vous connecter. Un administrateur doit encore valider votre compte avant que vous puissiez y accéder.</p>
+    </section>
+
+    <section id="echec" hidden>
+      <h1>Lien invalide</h1>
+      <p id="raison">Ce lien a expiré ou a déjà été utilisé.</p>
+      <p>Depuis le logiciel, utilisez à nouveau « Mot de passe oublié » pour recevoir un nouveau lien.</p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    // Clé publique du projet (la même que celle du logiciel) : les droits sont contrôlés par la base.
+    const URL_PROJET = 'https://mjvwvmxsvlbyywxkqica.supabase.co';
+    const CLE_PUBLIQUE = 'sb_publishable_ZN0H8eI5j3s7VIKPyIxi2Q_h7z4y3GS';
+
+    const voir = (id) => document.querySelectorAll('main > section').forEach((s) => (s.hidden = s.id !== id));
+    const hash = new URLSearchParams(location.hash.slice(1));
+    const requete = new URLSearchParams(location.search);
+    const type = hash.get('type') || requete.get('type');
+    const erreurLien = hash.get('error_description') || requete.get('error_description');
+
+    if (erreurLien) {
+      document.getElementById('raison').textContent = erreurLien.includes('expired') ? 'Ce lien a expiré.' : 'Ce lien n’est pas valide ou a déjà été utilisé.';
+      voir('echec');
+    } else {
+      const client = supabase.createClient(URL_PROJET, CLE_PUBLIQUE, { auth: { persistSession: false, detectSessionInUrl: true, autoRefreshToken: false } });
+      // La bibliothèque lit le jeton présent dans l'adresse, puis on l'efface de la barre d'adresse.
+      client.auth.getSession().then(({ data }) => {
+        history.replaceState(null, '', location.pathname);
+        const session = data.session;
+        if (!session) return voir('echec');
+        if (type === 'recovery') {
+          document.getElementById('pour').textContent = 'Compte : ' + session.user.email;
+          voir('nouveau');
+        } else {
+          voir('confirme');
+          client.auth.signOut();
+        }
+      });
+
+      document.getElementById('formulaire').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const mdp = document.getElementById('mdp').value;
+        const erreur = document.getElementById('erreur-form');
+        erreur.hidden = true;
+        if (mdp !== document.getElementById('mdp2').value) {
+          erreur.textContent = 'Les deux saisies ne sont pas identiques.';
+          erreur.hidden = false;
+          return;
+        }
+        const bouton = document.getElementById('valider');
+        bouton.disabled = true;
+        const { error } = await client.auth.updateUser({ password: mdp });
+        bouton.disabled = false;
+        if (error) {
+          erreur.textContent = error.message.includes('different') ? 'Choisissez un mot de passe différent de l’ancien.' : 'Impossible d’enregistrer : ' + error.message;
+          erreur.hidden = false;
+          return;
+        }
+        await client.auth.signOut();
+        voir('change');
+      });
+    }
+  </script>
+</body>
+</html>
