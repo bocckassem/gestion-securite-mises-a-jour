@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Vérification d'une carte professionnelle</title>
+  <!-- Page ouverte en scannant le QR code au verso d'une carte professionnelle. Le jeton est après le « # » :
+       il n'est jamais envoyé au serveur qui héberge cette page, seulement à la fonction de vérification. -->
+  <style>
+    :root {
+      --papier: #f6f4ef; --surface: #fff; --encre: #17150f; --encre-2: #4a463d; --encre-3: #8a8578; --trait: #e6e2d8;
+      --accent: #b8321a; --ok: #2f6b3a; --ok-fond: #e3efe2; --danger: #a3221a; --danger-fond: #f6dfdc;
+      --serif: 'Sitka Display', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+      --sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--papier); color: var(--encre); font: 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+    main { max-width: 440px; margin: 0 auto; padding: 28px 16px 40px; }
+    .societe { font-family: var(--serif); font-size: 20px; font-weight: 600; }
+    .societe span { color: var(--accent); }
+    .sous { color: var(--encre-3); font-size: 13px; margin-top: 2px; }
+    .carte { margin-top: 22px; background: var(--surface); border: 1px solid var(--trait); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px rgba(23,21,15,.05), 0 12px 32px -12px rgba(23,21,15,.18); animation: monte .5s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes monte { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .etat { padding: 16px 20px; display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 18px; }
+    .etat svg { flex: none; }
+    .etat.valide { background: var(--ok-fond); color: var(--ok); }
+    .etat.invalide { background: var(--danger-fond); color: var(--danger); }
+    .identite { padding: 20px; display: grid; grid-template-columns: 112px 1fr; gap: 18px; align-items: start; }
+    .photo { width: 112px; aspect-ratio: 35 / 45; border-radius: 10px; background: #efece4 center / cover no-repeat; border: 1px solid var(--trait); }
+    .nom { font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1.15; letter-spacing: -.01em; }
+    dl { margin: 10px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+    dt { color: var(--encre-3); }
+    dd { margin: 0; font-variant-numeric: tabular-nums; }
+    .motif { padding: 0 20px 18px; color: var(--danger); font-size: 15px; }
+    .pied { padding: 14px 20px; border-top: 1px solid var(--trait); font-size: 13px; color: var(--encre-2); }
+    .pied a { color: var(--encre); font-weight: 600; }
+    .attente { margin-top: 60px; text-align: center; color: var(--encre-3); }
+    .note { margin-top: 18px; font-size: 12px; color: var(--encre-3); text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="societe" id="societe">Vérification d'une carte</div>
+    <div class="sous">Contrôle d'une carte professionnelle d'agent de sécurité</div>
+    <div id="resultat"><p class="attente">Vérification en cours…</p></div>
+    <p class="note">Cette page n'affiche que les informations inscrites sur la carte. Elle est mise à jour en temps réel par l'entreprise.</p>
+  </main>
+  <script>
+    (function () {
+      var FONCTION = 'https://mjvwvmxsvlbyywxkqica.supabase.co/functions/v1/verifier-carte';
+      var CLE = 'sb_publishable_ZN0H8eI5j3s7VIKPyIxi2Q_h7z4y3GS';
+      var zone = document.getElementById('resultat');
+      var jeton = decodeURIComponent((location.hash || '').slice(1));
+
+      function texte(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+      var ICONE_OK = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m7.5 12.5 3 3 6-6.5"/></svg>';
+      var ICONE_NON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>';
+
+      function societe(s) {
+        if (s && s.raison_sociale) document.getElementById('societe').innerHTML = texte(s.raison_sociale);
+        if (!s || !s.telephone) return '';
+        return '<div class="pied">Un doute ? Appelez l\'entreprise : <a href="tel:' + texte(String(s.telephone).replace(/\s/g, '')) + '">' + texte(s.telephone) + '</a></div>';
+      }
+
+      function inconnue(s) {
+        zone.innerHTML = '<div class="carte"><div class="etat invalide">' + ICONE_NON + '<span>Carte inconnue</span></div>' +
+          '<div class="motif" style="padding-top:16px">Ce QR code ne correspond à aucune carte émise par l\'entreprise. La carte peut être fausse ou avoir été mal scannée.</div>' +
+          societe(s) + '</div>';
+      }
+
+      if (!/^[A-Za-z0-9_-]{24}$/.test(jeton)) return inconnue(null);
+
+      fetch(FONCTION + '?j=' + encodeURIComponent(jeton), { headers: { apikey: CLE } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.trouvee) return inconnue(d.societe);
+          var a = d.agent;
+          var heure = new Date(d.verifie_le).toLocaleString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+          zone.innerHTML =
+            '<div class="carte">' +
+              '<div class="etat ' + (d.valide ? 'valide' : 'invalide') + '">' + (d.valide ? ICONE_OK : ICONE_NON) +
+                '<span>' + (d.valide ? 'Agent en activité' : 'Carte non valide') + '</span></div>' +
+              '<div class="identite">' +
+                '<div class="photo"' + (a.photo ? ' style="background-image:url(\'' + texte(a.photo) + '\')"' : '') + ' role="img" aria-label="Photo de l\'agent"></div>' +
+                '<div><div class="nom">' + texte(a.prenom) + ' ' + texte(String(a.nom).toUpperCase()) + '</div>' +
+                  '<dl><dt>Matricule</dt><dd>' + texte(a.matricule) + '</dd><dt>Fonction</dt><dd>' + texte(a.fonction) + '</dd>' +
+                  '<dt>Carte n°</dt><dd>' + texte(d.numero) + '</dd><dt>Vérifié le</dt><dd>' + texte(heure) + '</dd></dl></div>' +
+              '</div>' +
+              (d.motif ? '<div class="motif">' + texte(d.motif) + '</div>' : '') +
+              societe(d.societe) +
+            '</div>';
+        })
+        .catch(function () {
+          zone.innerHTML = '<p class="attente">Vérification impossible pour le moment (pas de connexion internet ?). Réessayez dans un instant.</p>';
+        });
+    })();
+  </script>
+</body>
+</html>
